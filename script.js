@@ -1057,103 +1057,98 @@ window.exportBackup = function() {
     console.log("exportBackup: Úplná záloha vytvořena.");
 };
 
-window.importFromCSV = async function(inputElement) {
-    if (!window.ensureUserLoggedIn()) return;
-    
-    console.log("importFromCSV: Spuštěn import dat z CSV.");
-    const file = inputElement.files[0]; if (!file) { console.warn("importFromCSV: Žádný soubor vybrán."); return; }
-    const reader = new FileReader();
-    reader.onload = async function(e) {
-        console.log("importFromCSV: Soubor CSV načten.");
-        const csv = e.target.result; const lines = csv.split(/\r\n|\n/);
-        if (lines.length <= 1) { window.showNotification('CSV soubor je prázdný nebo neobsahuje data.', 3000); console.warn("importFromCSV: CSV soubor je prázdný."); inputElement.value = ''; return; }
-        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-        const muscleKgOrPercentIdx = headers.indexOf('svalova hmota (kg)') !== -1 ? headers.indexOf('svalova hmota (kg)') : headers.indexOf('svalova hmota (%)');
-        
-        const dateIdx = headers.indexOf('datum'); const weightIdx = headers.indexOf('vaha (kg)');
-        const fatIdx = headers.indexOf('telesny tuk (%)'); const waterIdx = headers.indexOf('voda v tele (%)');
-        const manualBmrIdx = headers.indexOf('manual bmr'); const manualAmrIdx = headers.indexOf('manual amr');
-        const notesIdx = headers.indexOf('poznamky');
-
-        let importedCount = 0; let skippedCount = 0;
-        console.log(`importFromCSV: Zpracovávám ${lines.length - 1} řádků CSV.`);
-        for (let i = 1; i < lines.length; i++) {
-            const data = lines[i].split(',');
-            const date = data[dateIdx] ? data[dateIdx].trim() : null;
-            const weight = data[weightIdx] ? parseFloat(data[weightIdx].trim()) : null;
-            if (!date || !weight || isNaN(weight)) { skippedCount++; console.warn(`importFromCSV: Přeskočen neplatný řádek ${i}: ${lines[i]}`); continue; }
+ window.importFromCSV = async function(inputElement) {
+        console.log("importFromCSV: Spuštěn import dat z CSV.");
+        const file = inputElement.files[0]; if (!file) { console.warn("importFromCSV: Žádný soubor vybrán."); return; }
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            console.log("importFromCSV: Soubor CSV načten.");
+            const csv = e.target.result; const lines = csv.split(/\r\n|\n/);
+            if (lines.length <= 1) { window.showNotification('CSV soubor je prázdný nebo neobsahuje data.', 3000); console.warn("importFromCSV: CSV soubor je prázdný."); inputElement.value = ''; return; }
+            const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+            const muscleKgOrPercentIdx = headers.indexOf('svalova hmota (kg)') !== -1 ? headers.indexOf('svalova hmota (kg)') : headers.indexOf('svalova hmota (%)');
             
-            let muscleMassKg = null;
-            if (muscleKgOrPercentIdx !== -1 && data[muscleKgOrPercentIdx] && !isNaN(parseFloat(data[muscleKgOrPercentIdx].trim()))) {
-                if (headers[muscleKgOrPercentIdx] === 'svalova hmota (%)') {
-                    const percent = parseFloat(data[muscleKgOrPercentIdx].trim());
-                    muscleMassKg = parseFloat(((percent / 100) * weight).toFixed(2));
-                } else { muscleMassKg = parseFloat(data[muscleKgOrPercentIdx].trim()); }
-            }
-            const newEntry = {
-                date: date, weight: weight, bodyFat: fatIdx !== -1 && data[fatIdx] ? parseFloat(data[fatIdx].trim()) : null,
-                muscleMass: muscleMassKg, bodyWater: waterIdx !== -1 && data[waterIdx] ? parseFloat(data[waterIdx].trim()) : null,
-                manualBMR: manualBmrIdx !== -1 && data[manualBmrIdx] ? parseInt(data[manualBmrIdx].trim()) : null,
-                manualAMR: manualAmrIdx !== -1 && data[manualAmrIdx] ? parseInt(data[manualAmrIdx].trim()) : null,
-                notes: notesIdx !== -1 && data[notesIdx] ? data[notesIdx].trim().replace(/^"|"$/g, '') : ""
-            };
-            const existingIndex = weightLog.findIndex(entry => entry.date === newEntry.date);
-            if (existingIndex !== -1) { weightLog[existingIndex] = newEntry; console.log(`importFromCSV: Aktualizován záznam pro datum ${date}.`); } else { weightLog.push(newEntry); console.log(`importFromCSV: Přidán nový záznam pro datum ${date}.`); }
-            importedCount++;
-        }
-        if (importedCount > 0) {
-            console.log("importFromCSV: Ukládám importovaná data.");
-            await window.saveData();
-            window.updateDisplay();
-            window.showNotification(`Importováno ${importedCount} záznamů. ${skippedCount > 0 ? skippedCount + ' přeskočeno.' : ''}`);
-        } else { window.showNotification('Nebyly nalezeny žádné platné záznamy k importu v CSV.', 3000); }
-        inputElement.value = '';
-        console.log("importFromCSV: Import CSV dokončen.");
-    };
-    reader.readAsText(file);
-};
+            const dateIdx = headers.indexOf('datum'); const weightIdx = headers.indexOf('vaha (kg)');
+            const fatIdx = headers.indexOf('telesny tuk (%)'); const waterIdx = headers.indexOf('voda v tele (%)');
+            const manualBmrIdx = headers.indexOf('manual bmr'); const manualAmrIdx = headers.indexOf('manual amr');
+            const notesIdx = headers.indexOf('poznamky');
 
-window.importFromBackup = async function(inputElement) {
-    if (!window.ensureUserLoggedIn()) return;
-    
-    console.log("importFromBackup: Spuštěn import ze zálohy.");
-    const file = inputElement.files[0]; if (!file) { console.warn("importFromBackup: Žádný soubor zálohy vybrán."); return; }
-    const reader = new FileReader();
-    reader.onload = async function(e) {
-        console.log("importFromBackup: Soubor zálohy načten.");
-        try {
-            const backupData = JSON.parse(e.target.result);
-            console.log("importFromBackup: Data zálohy analyzována:", backupData);
-            if (backupData.appName !== "Pokročilý váhový tracker více admirála Jiříka") {
-                console.warn("importFromBackup: Soubor zálohy nepochází z této aplikace. Dotazuji uživatele na pokračování.");
-                if (!confirm("Zdá se, že tento soubor nepochází z této aplikace. Přesto pokračovat?")) {
-                    inputElement.value = ''; console.log("importFromBackup: Import zálohy zrušen uživatelem."); return;
+            let importedCount = 0; let skippedCount = 0;
+            console.log(`importFromCSV: Zpracovávám ${lines.length - 1} řádků CSV.`);
+            for (let i = 1; i < lines.length; i++) {
+                const data = lines[i].split(',');
+                const date = data[dateIdx] ? data[dateIdx].trim() : null;
+                const weight = data[weightIdx] ? parseFloat(data[weightIdx].trim()) : null;
+                if (!date || !weight || isNaN(weight)) { skippedCount++; console.warn(`importFromCSV: Přeskočen neplatný řádek ${i}: ${lines[i]}`); continue; }
+                
+                let muscleMassKg = null;
+                if (muscleKgOrPercentIdx !== -1 && data[muscleKgOrPercentIdx] && !isNaN(parseFloat(data[muscleKgOrPercentIdx].trim()))) {
+                    if (headers[muscleKgOrPercentIdx] === 'svalova hmota (%)') {
+                        const percent = parseFloat(data[muscleKgOrPercentIdx].trim());
+                        muscleMassKg = parseFloat(((percent / 100) * weight).toFixed(2));
+                    } else { muscleMassKg = parseFloat(data[muscleKgOrPercentIdx].trim()); }
                 }
+                const newEntry = {
+                    date: date, weight: weight, bodyFat: fatIdx !== -1 && data[fatIdx] ? parseFloat(data[fatIdx].trim()) : null,
+                    muscleMass: muscleMassKg, bodyWater: waterIdx !== -1 && data[waterIdx] ? parseFloat(data[waterIdx].trim()) : null,
+                    manualBMR: manualBmrIdx !== -1 && data[manualBmrIdx] ? parseInt(data[manualBmrIdx].trim()) : null,
+                    manualAMR: manualAmrIdx !== -1 && data[manualAmrIdx] ? parseInt(data[manualAmrIdx].trim()) : null,
+                    notes: notesIdx !== -1 && data[notesIdx] ? data[notesIdx].trim().replace(/^"|"$/g, '') : ""
+                };
+                const existingIndex = weightLog.findIndex(entry => entry.date === newEntry.date);
+                if (existingIndex !== -1) { weightLog[existingIndex] = newEntry; console.log(`importFromCSV: Aktualizován záznam pro datum ${date}.`); } else { weightLog.push(newEntry); console.log(`importFromCSV: Přidán nový záznam pro datum ${date}.`); }
+                importedCount++;
             }
-            if (backupData.weightLog) { weightLog = backupData.weightLog; console.log("importFromBackup: weightLog ze zálohy načten."); }
-            if (backupData.settings) { settings = { ...settings, ...backupData.settings }; console.log("importFromBackup: Nastavení ze zálohy načtena."); }
-            if (backupData.goals) { goals = { ...goals, ...backupData.goals }; console.log("importFromBackup: Cíle ze zálohy načteny."); }
-            
-            weightLog.forEach(entry => {
-                if (entry.manualBMR === undefined) entry.manualBMR = null;
-                if (entry.manualAMR === undefined) entry.manualAMR = null;
-                if (entry.muscleMass === undefined) entry.muscleMass = null;
-            });
-            console.log("importFromBackup: Data zálohy připravena, ukládám.");
-            await window.saveData();
-            window.updateForms();
-            window.updateDisplay();
-            window.showNotification('Záloha úspěšně obnovena!');
-            console.log("importFromBackup: Import zálohy dokončen.");
-        } catch (error) {
-            window.showNotification('Chyba při načítání zálohy: ' + error.message, 4000);
-            console.error("importFromBackup: Chyba při zpracování souboru zálohy:", error);
-        }
-        inputElement.value = '';
+            if (importedCount > 0) {
+                console.log("importFromCSV: Ukládám importovaná data.");
+                await window.saveData(); // Voláme globální saveData()
+                window.updateDisplay(); // Voláme globální updateDisplay()
+                window.showNotification(`Importováno ${importedCount} záznamů. ${skippedCount > 0 ? skippedCount + ' přeskočeno.' : ''}`);
+            } else { window.showNotification('Nebyly nalezeny žádné platné záznamy k importu v CSV.', 3000); }
+            inputElement.value = '';
+            console.log("importFromCSV: Import CSV dokončen.");
+        };
+        reader.readAsText(file);
     };
-    reader.readAsText(file);
-};
 
+    window.importFromBackup = async function(inputElement) { // Globalizováno a async
+        console.log("importFromBackup: Spuštěn import ze zálohy.");
+        const file = inputElement.files[0]; if (!file) { console.warn("importFromBackup: Žádný soubor zálohy vybrán."); return; }
+        const reader = new FileReader();
+        reader.onload = async function(e) { // async vnořená funkce
+            console.log("importFromBackup: Soubor zálohy načten.");
+            try {
+                const backupData = JSON.parse(e.target.result);
+                console.log("importFromBackup: Data zálohy analyzována:", backupData);
+                if (backupData.appName !== "Pokročilý váhový tracker více admirála Jiříka") {
+                    console.warn("importFromBackup: Soubor zálohy nepochází z této aplikace. Dotazuji uživatele na pokračování.");
+                    if (!confirm("Zdá se, že tento soubor nepochází z této aplikace. Přesto pokračovat?")) {
+                        inputElement.value = ''; console.log("importFromBackup: Import zálohy zrušen uživatelem."); return;
+                    }
+                }
+                if (backupData.weightLog) { weightLog = backupData.weightLog; console.log("importFromBackup: weightLog ze zálohy načten."); }
+                if (backupData.settings) { settings = { ...settings, ...backupData.settings }; console.log("importFromBackup: Nastavení ze zálohy načtena."); }
+                if (backupData.goals) { goals = { ...goals, ...backupData.goals }; console.log("importFromBackup: Cíle ze zálohy načteny."); }
+                
+                weightLog.forEach(entry => { // Zajištění kompatibility starších záznamů
+                    if (entry.manualBMR === undefined) entry.manualBMR = null;
+                    if (entry.manualAMR === undefined) entry.manualAMR = null;
+                    if (entry.muscleMass === undefined) entry.muscleMass = null;
+                });
+                console.log("importFromBackup: Data zálohy připravena, ukládám.");
+                await window.saveData(); // Voláme globální saveData()
+                window.updateForms(); // Voláme globální updateForms()
+                window.updateDisplay(); // Voláme globální updateDisplay()
+                window.showNotification('Záloha úspěšně obnovena!');
+                console.log("importFromBackup: Import zálohy dokončen.");
+            } catch (error) {
+                window.showNotification('Chyba při načítání zálohy: ' + error.message, 4000);
+                console.error("importFromBackup: Chyba při zpracování souboru zálohy:", error);
+            }
+            inputElement.value = '';
+        };
+        reader.readAsText(file);
+    };
 window.clearAllData = async function() {
     if (!window.ensureUserLoggedIn()) return;
     
