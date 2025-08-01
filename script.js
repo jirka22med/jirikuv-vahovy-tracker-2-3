@@ -927,371 +927,378 @@ window.editEntry = function(date) {
 };
 
 window.exportToCSV = function() {
-        console.log("exportToCSV: Spusten export dat do CSV.");
-        if (weightLog.length === 0) { window.showNotification("Neni co exportovat.", 2000); console.warn("exportToCSV: Zadna data k exportu."); return; }
-        const headers = ['Datum', 'Vaha (kg)', 'BMI', 'Telesny tuk (%)', 'Svalova hmota (%)', 'Svalova hmota (%)', 'Voda v tele (%)', 'Manual BMR', 'Manual AMR', 'Poznamky'];
-        const rows = weightLog.map(entry => {
-            let musclePercent = '';
-            if (entry.muscleMass && entry.weight && entry.weight > 0) {
-                musclePercent = ((entry.muscleMass / entry.weight) * 100).toFixed(1);
-            }
-            return [
-                entry.date, entry.weight, window.calculateBMI(entry.weight, settings.height).toFixed(1),
-                entry.bodyFat || '', musclePercent, entry.muscleMass || '', entry.bodyWater || '',
-                entry.manualBMR || '', entry.manualAMR || '', `"${(entry.notes || '').replace(/"/g, '""')}"`
-            ];
-        });
-
-        const csvContent = "data:text/csv;charset=utf-8," + headers.join(',') + '\n' + rows.map(row => row.join(',')).join('\n');
-        const encodedUri = encodeURI(csvContent);
-        const link = document.createElement('a');
-        link.setAttribute('href', encodedUri);
-        link.setAttribute('download', `vaha_export_Jirik_${new Date().toISOString().split('T')[0]}.csv`);
-        document.body.appendChild(link); link.click(); document.body.removeChild(link);
-        window.showNotification('CSV export dokoncen!');
-        console.log("exportToCSV: Export CSV dokoncen.");
-    };
-
-    window.exportToPDF = function() {
-        console.log("exportToPDF: Spusten export dat do PDF.");
-        if (weightLog.length === 0) { window.showNotification("Neni co exportovat.", 2000); console.warn("exportToPDF: Zadna data k exportu."); return; }
-        const { jsPDF } = window.jspdf;
-        const doc = new jsPDF();
-        
-        doc.setFontSize(18); doc.text('Vahovy report - Admiral Jirik', 14, 22);
-        doc.setFontSize(11); doc.text(`Generovano: ${window.formatDateForDisplay(new Date().toISOString().split('T')[0])}`, 14, 30);
-        doc.text(`Vyska: ${settings.height} cm, Vek: ${settings.age || '-'} let, Pohlavi: ${settings.gender === 'male' ? 'Muz' : 'Zena'}`, 14, 36);
-        
-        const latestEntry = [...weightLog].sort((a, b) => new Date(b.date) - new Date(a.date))[0];
-        if (latestEntry) {
-            const currentBMI = window.calculateBMI(latestEntry.weight, settings.height);
-            const theoBMR = window.calculateBMR(latestEntry.weight, settings.height, settings.age, settings.gender);
-            const theoAMR = window.calculateAMR(theoBMR, settings.activityLevel);
-            doc.text(`Aktualni vaha: ${latestEntry.weight.toFixed(1)} kg, BMI: ${currentBMI > 0 ? currentBMI.toFixed(1) : '-'}`, 14, 42);
-            if (latestEntry.manualBMR || latestEntry.manualAMR) {
-                doc.text(`Posl. zadany BMR: ${latestEntry.manualBMR || '-'} kcal, AMR: ${latestEntry.manualAMR || '-'} kcal`, 14, 48);
-            } else {
-                doc.text(`Teoreticky BMR: ${theoBMR > 0 ? Math.round(theoBMR) : '-'} kcal, AMR: ${theoAMR > 0 ? Math.round(theoAMR) : '-'} kcal`, 14, 48);
-            }
-        }
-
-        const tableColumn = ["#", "Datum", "Vaha", "BMI", "Tuk%", "Svaly%", "Voda%", "Zad.BMR", "Zad.AMR"];
-        const tableRows = [];
-        const sortedLog = [...weightLog].sort((a, b) => new Date(a.date) - new Date(b.date));
-
-        sortedLog.forEach((entry, index) => {
-            const bmi = window.calculateBMI(entry.weight, settings.height);
-            let musclePercentText = '-';
-            if (entry.muscleMass && entry.weight && entry.weight > 0) {
-                musclePercentText = ((entry.muscleMass / entry.weight) * 100).toFixed(1);
-            }
-            const rowData = [
-                index + 1, window.formatDateForDisplay(entry.date), entry.weight.toFixed(1),
-                bmi > 0 ? bmi.toFixed(1) : '-',
-                entry.bodyFat !== null && entry.bodyFat !== undefined ? entry.bodyFat.toFixed(1) : '-',
-                musclePercentText,
-                entry.bodyWater !== null && entry.bodyWater !== undefined ? entry.bodyWater.toFixed(1) : '-',
-                entry.manualBMR !== null && entry.manualBMR !== undefined ? entry.manualBMR : '-',
-                entry.manualAMR !== null && entry.manualAMR !== undefined ? entry.manualAMR : '-',
-            ];
-            tableRows.push(rowData);
-        });
-
-        doc.autoTable({ head: [tableColumn], body: tableRows, startY: 55, theme: 'grid', headStyles: { fillColor: [13, 17, 23], textColor: [0, 217, 255] }, styles: { font: "Consolas", cellPadding: 1.5, fontSize: 7 }, columnStyles: { 0: { cellWidth: 8 }, 1: { cellWidth: 20 }, } });
-        doc.save(`vaha_report_Jirik_${new Date().toISOString().split('T')[0]}.pdf`);
-        window.showNotification('PDF report dokoncen!');
-        console.log("exportToPDF: Export PDF dokoncen.");
-    };
-
-    window.exportChartsAsPDF = function() {
-        console.log("exportChartsAsPDF: Spusten export grafu do PDF.");
-        if (weightLog.length === 0) { window.showNotification("Neni co exportovat.", 2000); console.warn("exportChartsAsPDF: Zadna data pro export."); return; }
-        const { jsPDF } = window.jspdf;
-        const doc = new jsPDF('p', 'mm', 'a4');
-        let yPos = 20; const chartWidth = 180; const chartHeight = 70; const spacing = 10;
-        doc.setFontSize(18); doc.text('Grafy vyvoje - Admiral Jirik', doc.internal.pageSize.getWidth() / 2, 15, { align: 'center' });
-        const chartsToExport = [
-            { canvasId: 'weightChart', title: 'Vyvoj vahy' }, { canvasId: 'bmiChart', title: 'Vyvoj BMI' },
-            { canvasId: 'bodyFatOnlyChart', title: 'Vyvoj telesneho tuku (%)' }, { canvasId: 'muscleMassOnlyChart', title: 'Vyvoj svalove hmoty (%)' },
-            { canvasId: 'bodyWaterChart', title: 'Vyvoj vody v tele (%)' }, { canvasId: 'manualBMRChart', title: 'Vyvoj zadaneho BMR (kcal)' },
-            { canvasId: 'manualAMRChart', title: 'Vyvoj zadaneho AMR (kcal)' }
-        ];
-        chartsToExport.forEach((chartInfo, index) => {
-            const canvas = document.getElementById(chartInfo.canvasId);
-            const chartInstance = Chart.getChart(canvas);
-            let hasData = false;
-            if (chartInstance && chartInstance.data.labels.length > 0) {
-                hasData = chartInstance.data.datasets.some(dataset => dataset.data.some(d => d !== null && !isNaN(d) && d !== undefined));
-            }
-            if (!hasData) return;
-            if (yPos + chartHeight + spacing > doc.internal.pageSize.getHeight() - 15 && index > 0) { doc.addPage(); yPos = 20; }
-            doc.setFontSize(12); doc.text(chartInfo.title, 15, yPos); yPos += 5;
-            const imgData = canvas.toDataURL('image/png', 0.95);
-            doc.addImage(imgData, 'PNG', 15, yPos, chartWidth, chartHeight); yPos += chartHeight + spacing;
-        });
-        doc.save(`vaha_grafy_Jirik_${new Date().toISOString().split('T')[0]}.pdf`);
-        window.showNotification('Grafy exportovany do PDF!');
-        console.log("exportChartsAsPDF: Export grafu dokoncen.");
-    };
-
-    window.exportBackup = function() {
-        console.log("exportBackup: Spusteno vytvareni uplne zalohy.");
-        const backupData = {
-            weightLog: weightLog, settings: settings, goals: goals,
-            exportDate: new Date().toISOString(), appName: "Pokrocily vahovy tracker vice admirala Jirika", version: "1.5.0"
-        };
-        const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = `vaha_zaloha_Jirik_${new Date().toISOString().split('T')[0]}.json`;
-        document.body.appendChild(link); link.click(); document.body.removeChild(link);
-        window.showNotification('Uplna zaloha vytvorena!');
-        console.log("exportBackup: Uplna zaloha vytvorena.");
-    };
-
-    window.importFromCSV = async function(inputElement) {
-        console.log("importFromCSV: Spuštěn import dat z CSV.");
-        const file = inputElement.files[0]; if (!file) { console.warn("importFromCSV: Žádný soubor vybrán."); return; }
-        const reader = new FileReader();
-        reader.onload = async function(e) {
-            console.log("importFromCSV: Soubor CSV načten.");
-            const csv = e.target.result; const lines = csv.split(/\r\n|\n/);
-            if (lines.length <= 1) { window.showNotification('CSV soubor je prázdný nebo neobsahuje data.', 3000); console.warn("importFromCSV: CSV soubor je prázdný."); inputElement.value = ''; return; }
-            const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-            const muscleKgOrPercentIdx = headers.indexOf('svalova hmota (kg)') !== -1 ? headers.indexOf('svalova hmota (kg)') : headers.indexOf('svalova hmota (%)');
-            
-            const dateIdx = headers.indexOf('datum'); const weightIdx = headers.indexOf('vaha (kg)');
-            const fatIdx = headers.indexOf('telesny tuk (%)'); const waterIdx = headers.indexOf('voda v tele (%)');
-            const manualBmrIdx = headers.indexOf('manual bmr'); const manualAmrIdx = headers.indexOf('manual amr');
-            const notesIdx = headers.indexOf('poznamky');
-
-            let importedCount = 0; let skippedCount = 0;
-            console.log(`importFromCSV: Zpracovávám ${lines.length - 1} řádků CSV.`);
-            for (let i = 1; i < lines.length; i++) {
-                const data = lines[i].split(',');
-                const date = data[dateIdx] ? data[dateIdx].trim() : null;
-                const weight = data[weightIdx] ? parseFloat(data[weightIdx].trim()) : null;
-                if (!date || !weight || isNaN(weight)) { skippedCount++; console.warn(`importFromCSV: Přeskočen neplatný řádek ${i}: ${lines[i]}`); continue; }
-                
-                let muscleMassKg = null;
-                if (muscleKgOrPercentIdx !== -1 && data[muscleKgOrPercentIdx] && !isNaN(parseFloat(data[muscleKgOrPercentIdx].trim()))) {
-                    if (headers[muscleKgOrPercentIdx] === 'svalova hmota (%)') {
-                        const percent = parseFloat(data[muscleKgOrPercentIdx].trim());
-                        muscleMassKg = parseFloat(((percent / 100) * weight).toFixed(2));
-                    } else { muscleMassKg = parseFloat(data[muscleKgOrPercentIdx].trim()); }
-                }
-                const newEntry = {
-                    date: date, weight: weight, bodyFat: fatIdx !== -1 && data[fatIdx] ? parseFloat(data[fatIdx].trim()) : null,
-                    muscleMass: muscleMassKg, bodyWater: waterIdx !== -1 && data[waterIdx] ? parseFloat(data[waterIdx].trim()) : null,
-                    manualBMR: manualBmrIdx !== -1 && data[manualBmrIdx] ? parseInt(data[manualBmrIdx].trim()) : null,
-                    manualAMR: manualAmrIdx !== -1 && data[manualAmrIdx] ? parseInt(data[manualAmrIdx].trim()) : null,
-                    notes: notesIdx !== -1 && data[notesIdx] ? data[notesIdx].trim().replace(/^"|"$/g, '') : ""
-                };
-                const existingIndex = weightLog.findIndex(entry => entry.date === newEntry.date);
-                if (existingIndex !== -1) { weightLog[existingIndex] = newEntry; console.log(`importFromCSV: Aktualizován záznam pro datum ${date}.`); } else { weightLog.push(newEntry); console.log(`importFromCSV: Přidán nový záznam pro datum ${date}.`); }
-                importedCount++;
-            }
-            if (importedCount > 0) {
-                console.log("importFromCSV: Ukládám importovaná data.");
-                await window.saveData(); // Voláme globální saveData()
-                window.updateDisplay(); // Voláme globální updateDisplay()
-                window.showNotification(`Importováno ${importedCount} záznamů. ${skippedCount > 0 ? skippedCount + ' přeskočeno.' : ''}`);
-            } else { window.showNotification('Nebyly nalezeny žádné platné záznamy k importu v CSV.', 3000); }
-            inputElement.value = '';
-            console.log("importFromCSV: Import CSV dokončen.");
-        };
-        reader.readAsText(file);
-    };
-
-    window.importFromBackup = async function(inputElement) { // Globalizováno a async
-        console.log("importFromBackup: Spuštěn import ze zálohy.");
-        const file = inputElement.files[0]; if (!file) { console.warn("importFromBackup: Žádný soubor zálohy vybrán."); return; }
-        const reader = new FileReader();
-        reader.onload = async function(e) { // async vnořená funkce
-            console.log("importFromBackup: Soubor zálohy načten.");
-            try {
-                const backupData = JSON.parse(e.target.result);
-                console.log("importFromBackup: Data zálohy analyzována:", backupData);
-                if (backupData.appName !== "Pokročilý váhový tracker více admirála Jiříka") {
-                    console.warn("importFromBackup: Soubor zálohy nepochází z této aplikace. Dotazuji uživatele na pokračování.");
-                    if (!confirm("Zdá se, že tento soubor nepochází z této aplikace. Přesto pokračovat?")) {
-                        inputElement.value = ''; console.log("importFromBackup: Import zálohy zrušen uživatelem."); return;
-                    }
-                }
-                if (backupData.weightLog) { weightLog = backupData.weightLog; console.log("importFromBackup: weightLog ze zálohy načten."); }
-                if (backupData.settings) { settings = { ...settings, ...backupData.settings }; console.log("importFromBackup: Nastavení ze zálohy načtena."); }
-                if (backupData.goals) { goals = { ...goals, ...backupData.goals }; console.log("importFromBackup: Cíle ze zálohy načteny."); }
-                
-                weightLog.forEach(entry => { // Zajištění kompatibility starších záznamů
-                    if (entry.manualBMR === undefined) entry.manualBMR = null;
-                    if (entry.manualAMR === undefined) entry.manualAMR = null;
-                    if (entry.muscleMass === undefined) entry.muscleMass = null;
-                });
-                console.log("importFromBackup: Data zálohy připravena, ukládám.");
-                await window.saveData(); // Voláme globální saveData()
-                window.updateForms(); // Voláme globální updateForms()
-                window.updateDisplay(); // Voláme globální updateDisplay()
-                window.showNotification('Záloha úspěšně obnovena!');
-                console.log("importFromBackup: Import zálohy dokončen.");
-            } catch (error) {
-                window.showNotification('Chyba při načítání zálohy: ' + error.message, 4000);
-                console.error("importFromBackup: Chyba při zpracování souboru zálohy:", error);
-            }
-            inputElement.value = '';
-        };
-        reader.readAsText(file);
-    };
-
-    window.clearAllData = async function() {
-        console.log("clearAllData: Spuštěn proces mazání všech dat.");
-        if (confirm('⚠️ OPRAVDU chcete smazat VŠECHNA data? Tuto akci nelze vrátit zpět!')) {
-            console.log("clearAllData: Uživatel potvrdil 1. fázi mazání.");
-            if (confirm('⚠️ JSTE SI ABSOLUTNĚ JISTI? Všechna data budou nenávratně ztracena!')) {
-                console.log("clearAllData: Uživatel potvrdil 2. fázi mazání. Mažu data.");
-                localStorage.removeItem('weightLog_JirikTracker_v2_charts_separated_musclePercent');
-                localStorage.removeItem('weightSettings_JirikTracker_v2_charts_separated_musclePercent');
-                localStorage.removeItem('weightGoals_JirikTracker_v2_charts_separated_musclePercent');
-                console.log("clearAllData: Lokální data smazána z LocalStorage.");
-                
-                try {
-                    console.log("clearAllData: Pokouším se smazat všechna data z Firebase Firestore.");
-                    await window.clearAllFirestoreData(); // Tato funkce je definována v firebaseFunctions.js
-                    console.log("clearAllData: Všechna data úspěšně smazána z Firebase Firestore.");
-                } catch (error) {
-                    console.error("clearAllData: Chyba při mazání všech dat z Firebase Firestore:", error);
-                    window.showNotification("Chyba při mazání dat z cloudu! Smažte je prosím ručně v konzoli Firebase.", 8000);
-                }
-
-                weightLog = [];
-                // Reset settings a goals na výchozí hodnoty
-                settings = { height: 174, age: null, gender: 'male', activityLevel: 1.55, bmiWarningUpper: 25, bmiDangerUpper: 30, bmiWarningLower: 18.5, reminderEnabled: true, reminderInterval: 7 };
-                goals = { targetWeight: null, targetBMI: null, targetDate: null, weeklyGoal: null };
-                console.log("clearAllData: Globální proměnné resetovány na výchozí hodnoty.");
-                await window.loadData(); // Voláme globální loadData() pro opětovné načtení (nyní prázdné nebo výchozí)
-                window.showNotification('Všechna data byla smazána!');
-                console.log("clearAllData: Proces mazání všech dat dokončen.");
-            } else {
-                console.log("clearAllData: Mazání všech dat zrušeno uživatelem (2. fáze).");
-            }
-        } else {
-            console.log("clearAllData: Mazání všech dat zrušeno uživatelem (1. fáze).");
-        }
-    };
-
-    window.checkReminders = function() {
-        console.log("checkReminders: Kontroluji, zda je třeba zobrazit připomínku.");
-        if (!settings.reminderEnabled) {
-            console.log("checkReminders: Připomínky jsou zakázány.");
-            return;
-        }
-        if (weightLog.length === 0) {
-            console.log("checkReminders: Žádné záznamy váhy, připomínka není nutná.");
-            return;
-        }
-        const lastEntry = [...weightLog].sort((a, b) => new Date(b.date) - new Date(a.date))[0];
-        if (lastEntry) {
-            const daysSinceLastEntry = Math.floor((new Date() - new Date(lastEntry.date)) / (1000 * 60 * 60 * 24));
-            console.log(`checkReminders: Dní od posledního záznamu (${window.formatDateForDisplay(lastEntry.date)}): ${daysSinceLastEntry}. Interval: ${settings.reminderInterval}.`);
-            if (daysSinceLastEntry >= settings.reminderInterval) {
-                window.showNotification(`⏰ Připomínka: Poslední záznam váhy byl před ${daysSinceLastEntry} dny (${window.formatDateForDisplay(lastEntry.date)})!`, 5000);
-                console.log("checkReminders: Zobrazena připomínka.");
-            } else {
-                console.log("checkReminders: Připomínka není nutná, interval ještě nevypršel.");
-            }
-        }
-    };
-    setInterval(window.checkReminders, 30 * 60 * 1000); // Používáme globální checkReminders
-
-
-    window.toggleFullScreen = function() {
-        console.log("toggleFullScreen: Pokus o přepnutí režimu celé obrazovky.");
-        const elem = document.documentElement;
-        const btn = document.getElementById('fullscreen-btn');
-        if (!document.fullscreenElement) {
-            console.log("toggleFullScreen: Vstupuji do celoobrazovkového režimu.");
-            if (elem.requestFullscreen) elem.requestFullscreen().catch(err => console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`));
-            else if (elem.mozRequestFullScreen) elem.mozRequestFullScreen();
-            else if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
-            else if (elem.msRequestFullscreen) elem.msRequestFullscreen();
-            if(btn) btn.innerHTML = '&#10006;';
-        } else {
-            console.log("toggleFullScreen: Opouštím celoobrazovkový režim.");
-            if (document.exitFullscreen) document.exitFullscreen();
-            else if (document.mozCancelFullScreen) document.mozCancelFullScreen();
-            else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
-            else if (document.msExitFullscreen) elem.msExitFullscreen();
-            if(btn) btn.innerHTML = '&#x26F6;';
-        }
-        console.log("toggleFullScreen: Přepnutí režimu celé obrazovky dokončeno.");
-    };
+    if (!window.ensureUserLoggedIn()) return;
     
-    window.updateFullscreenButtonIcon = function() {
-        // console.log("updateFullscreenButtonIcon: Aktualizuji ikonu fullscreen tlačítka."); // Velmi časté volání
-        const btn = document.getElementById('fullscreen-btn');
-        if(!btn) return;
-        if (document.fullscreenElement || document.mozFullScreenElement || document.webkitFullscreenElement || document.msFullscreenElement) {
-            btn.innerHTML = '&#10006;';
-        } else {
-            btn.innerHTML = '&#x26F6;';
+    console.log("exportToCSV: Spusten export dat do CSV.");
+    if (weightLog.length === 0) { window.showNotification("Není co exportovat.", 2000); console.warn("exportToCSV: Žádná data k exportu."); return; }
+    const headers = ['Datum', 'Vaha (kg)', 'BMI', 'Telesny tuk (%)', 'Svalova hmota (%)', 'Svalova hmota (kg)', 'Voda v tele (%)', 'Manual BMR', 'Manual AMR', 'Poznamky'];
+    const rows = weightLog.map(entry => {
+        let musclePercent = '';
+        if (entry.muscleMass && entry.weight && entry.weight > 0) {
+            musclePercent = ((entry.muscleMass / entry.weight) * 100).toFixed(1);
         }
-    };
-
-    // Funkce pro aktualizaci všech údajů z tlačítka
-    window.refreshAllData = async function() {
-        console.log("refreshAllData: Spuštěna ruční aktualizace všech údajů (z tlačítka).");
-        // Nejdříve zničíme existující instance grafů, než je znovu inicializujeme
-        if (weightChart) { weightChart.destroy(); console.log("refreshAllData: weightChart zničen."); }
-        if (bmiChart) { bmiChart.destroy(); console.log("refreshAllData: bmiChart zničen."); }
-        if (bodyFatOnlyChart) { bodyFatOnlyChart.destroy(); console.log("refreshAllData: bodyFatOnlyChart zničen."); }
-        if (muscleMassOnlyChart) { muscleMassOnlyChart.destroy(); console.log("refreshAllData: muscleMassOnlyChart zničen."); }
-        if (bodyWaterChart) { bodyWaterChart.destroy(); console.log("refreshAllData: bodyWaterChart zničen."); }
-        if (manualBMRChart) { manualBMRChart.destroy(); console.log("refreshAllData: manualBMRChart zničen."); }
-        if (manualAMRChart) { manualAMRChart.destroy(); console.log("refreshAllData: manualAMRChart zničen."); }
-
-        await window.loadData(); // Voláme globální loadData()
-        window.updateForms(); // Voláme globální updateForms()
-        window.initializeCharts(); // Voláme globální initializeCharts()
-        window.updateDisplay(); // Voláme globální updateDisplay()
-        window.checkReminders(); // Voláme globální checkReminders()
-        window.showNotification('Všechny údaje byly úspěšně aktualizovány (včetně cloudu)!', 3000);
-        console.log("refreshAllData: Ruční aktualizace dokončena.");
-    };
-
-    // Hlavní inicializační logika po načtení DOM
-    document.addEventListener('DOMContentLoaded', async function() {
-        console.log("DOMContentLoaded: DOM plně načten. Spouštím hlavní inicializaci aplikace.");
-        // Inicializujeme Firebase aplikaci a Firestore databázi pomocí funkce z firebaseFunctions.js
-        // Tato funkce (window.initializeFirebaseApp) je definována v firebaseFunctions.js
-        if (window.initializeFirebaseApp()) {
-            console.log("DOMContentLoaded: Firebase inicializace dokončena v hlavní stránce. Pokouším se načíst data.");
-            // Nyní, když je Firebase připraveno, můžeme načíst data
-            await window.loadData();
-        } else {
-            console.error("DOMContentLoaded: Kritická chyba: Nepodařilo se inicializovat Firebase. Aplikace bude fungovat pouze s LocalStorage daty.");
-            window.showNotification("Kritická chyba: Nelze se připojit k databázi. Data se ukládají pouze lokálně!", 8000);
-            // I přes selhání Firebase se pokusíme načíst z LocalStorage a zobrazit UI
-            await window.loadData(); // Spustí načítání (fallback na LocalStorage)
-        }
-        
-        console.log("DOMContentLoaded: Inicializuji grafy a aktualizuji zobrazení.");
-        window.initializeCharts();
-        window.updateDisplay();
-        window.checkReminders();
-        window.setTodayDate();
-
-        // Přidání tlačítka na celou obrazovku
-        const fullscreenButton = document.createElement('button');
-        fullscreenButton.className = 'fullscreen';
-        fullscreenButton.id = 'fullscreen-btn';
-        fullscreenButton.innerHTML = '&#x26F6;';
-        fullscreenButton.title = 'Přepnout na celou obrazovku';
-        fullscreenButton.addEventListener('click', window.toggleFullScreen);
-        document.body.appendChild(fullscreenButton);
-        console.log("DOMContentLoaded: Fullscreen tlačítko přidáno.");
-
-        ['fullscreenchange', 'mozfullscreenchange', 'webkitfullscreenchange', 'msfullscreenchange'].forEach(event => {
-            document.addEventListener(event, window.updateFullscreenButtonIcon);
-            console.log(`DOMContentLoaded: Posluchač události ${event} přidán.`);
-        });
-        console.log("DOMContentLoaded: Hlavní inicializace aplikace dokončena.");
+        return [
+            entry.date, entry.weight, window.calculateBMI(entry.weight, settings.height).toFixed(1),
+            entry.bodyFat || '', musclePercent, entry.muscleMass || '', entry.bodyWater || '',
+            entry.manualBMR || '', entry.manualAMR || '', `"${(entry.notes || '').replace(/"/g, '""')}"`
+        ];
     });
+
+    const csvContent = "data:text/csv;charset=utf-8," + headers.join(',') + '\n' + rows.map(row => row.join(',')).join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `vaha_export_Jirik_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    window.showNotification('CSV export dokončen!');
+    console.log("exportToCSV: Export CSV dokončen.");
+};
+
+window.exportToPDF = function() {
+    if (!window.ensureUserLoggedIn()) return;
+    
+    console.log("exportToPDF: Spusten export dat do PDF.");
+    if (weightLog.length === 0) { window.showNotification("Není co exportovat.", 2000); console.warn("exportToPDF: Žádná data k exportu."); return; }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    
+    doc.setFontSize(18); doc.text('Váhový report - Admiral Jirik', 14, 22);
+    doc.setFontSize(11); doc.text(`Generováno: ${window.formatDateForDisplay(new Date().toISOString().split('T')[0])}`, 14, 30);
+    doc.text(`Výška: ${settings.height} cm, Věk: ${settings.age || '-'} let, Pohlaví: ${settings.gender === 'male' ? 'Muž' : 'Žena'}`, 14, 36);
+    
+    const latestEntry = [...weightLog].sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+    if (latestEntry) {
+        const currentBMI = window.calculateBMI(latestEntry.weight, settings.height);
+        const theoBMR = window.calculateBMR(latestEntry.weight, settings.height, settings.age, settings.gender);
+        const theoAMR = window.calculateAMR(theoBMR, settings.activityLevel);
+        doc.text(`Aktuální váha: ${latestEntry.weight.toFixed(1)} kg, BMI: ${currentBMI > 0 ? currentBMI.toFixed(1) : '-'}`, 14, 42);
+        if (latestEntry.manualBMR || latestEntry.manualAMR) {
+            doc.text(`Posl. zadaný BMR: ${latestEntry.manualBMR || '-'} kcal, AMR: ${latestEntry.manualAMR || '-'} kcal`, 14, 48);
+        } else {
+            doc.text(`Teoretický BMR: ${theoBMR > 0 ? Math.round(theoBMR) : '-'} kcal, AMR: ${theoAMR > 0 ? Math.round(theoAMR) : '-'} kcal`, 14, 48);
+        }
+    }
+
+    const tableColumn = ["#", "Datum", "Váha", "BMI", "Tuk%", "Svaly%", "Voda%", "Zad.BMR", "Zad.AMR"];
+    const tableRows = [];
+    const sortedLog = [...weightLog].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    sortedLog.forEach((entry, index) => {
+        const bmi = window.calculateBMI(entry.weight, settings.height);
+        let musclePercentText = '-';
+        if (entry.muscleMass && entry.weight && entry.weight > 0) {
+            musclePercentText = ((entry.muscleMass / entry.weight) * 100).toFixed(1);
+        }
+        const rowData = [
+            index + 1, window.formatDateForDisplay(entry.date), entry.weight.toFixed(1),
+            bmi > 0 ? bmi.toFixed(1) : '-',
+            entry.bodyFat !== null && entry.bodyFat !== undefined ? entry.bodyFat.toFixed(1) : '-',
+            musclePercentText,
+            entry.bodyWater !== null && entry.bodyWater !== undefined ? entry.bodyWater.toFixed(1) : '-',
+            entry.manualBMR !== null && entry.manualBMR !== undefined ? entry.manualBMR : '-',
+            entry.manualAMR !== null && entry.manualAMR !== undefined ? entry.manualAMR : '-',
+        ];
+        tableRows.push(rowData);
+    });
+
+    doc.autoTable({ head: [tableColumn], body: tableRows, startY: 55, theme: 'grid', headStyles: { fillColor: [13, 17, 23], textColor: [0, 217, 255] }, styles: { font: "Consolas", cellPadding: 1.5, fontSize: 7 }, columnStyles: { 0: { cellWidth: 8 }, 1: { cellWidth: 20 }, } });
+    doc.save(`vaha_report_Jirik_${new Date().toISOString().split('T')[0]}.pdf`);
+    window.showNotification('PDF report dokončen!');
+    console.log("exportToPDF: Export PDF dokončen.");
+};
+
+window.exportChartsAsPDF = function() {
+    if (!window.ensureUserLoggedIn()) return;
+    
+    console.log("exportChartsAsPDF: Spusten export grafů do PDF.");
+    if (weightLog.length === 0) { window.showNotification("Není co exportovat.", 2000); console.warn("exportChartsAsPDF: Žádná data pro export."); return; }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF('p', 'mm', 'a4');
+    let yPos = 20; const chartWidth = 180; const chartHeight = 70; const spacing = 10;
+    doc.setFontSize(18); doc.text('Grafy vývoje - Admiral Jirik', doc.internal.pageSize.getWidth() / 2, 15, { align: 'center' });
+    const chartsToExport = [
+        { canvasId: 'weightChart', title: 'Vývoj váhy' }, { canvasId: 'bmiChart', title: 'Vývoj BMI' },
+        { canvasId: 'bodyFatOnlyChart', title: 'Vývoj tělesného tuku (%)' }, { canvasId: 'muscleMassOnlyChart', title: 'Vývoj svalové hmoty (%)' },
+        { canvasId: 'bodyWaterChart', title: 'Vývoj vody v těle (%)' }, { canvasId: 'manualBMRChart', title: 'Vývoj zadaného BMR (kcal)' },
+        { canvasId: 'manualAMRChart', title: 'Vývoj zadaného AMR (kcal)' }
+    ];
+    chartsToExport.forEach((chartInfo, index) => {
+        const canvas = document.getElementById(chartInfo.canvasId);
+        const chartInstance = Chart.getChart(canvas);
+        let hasData = false;
+        if (chartInstance && chartInstance.data.labels.length > 0) {
+            hasData = chartInstance.data.datasets.some(dataset => dataset.data.some(d => d !== null && !isNaN(d) && d !== undefined));
+        }
+        if (!hasData) return;
+        if (yPos + chartHeight + spacing > doc.internal.pageSize.getHeight() - 15 && index > 0) { doc.addPage(); yPos = 20; }
+        doc.setFontSize(12); doc.text(chartInfo.title, 15, yPos); yPos += 5;
+        const imgData = canvas.toDataURL('image/png', 0.95);
+        doc.addImage(imgData, 'PNG', 15, yPos, chartWidth, chartHeight); yPos += chartHeight + spacing;
+    });
+    doc.save(`vaha_grafy_Jirik_${new Date().toISOString().split('T')[0]}.pdf`);
+    window.showNotification('Grafy exportovány do PDF!');
+    console.log("exportChartsAsPDF: Export grafů dokončen.");
+};
+
+window.exportBackup = function() {
+    if (!window.ensureUserLoggedIn()) return;
+    
+    console.log("exportBackup: Spuštěno vytváření úplné zálohy.");
+    const backupData = {
+        weightLog: weightLog, settings: settings, goals: goals,
+        exportDate: new Date().toISOString(), appName: "Pokročilý váhový tracker více admirála Jiříka", version: "1.5.0"
+    };
+    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `vaha_zaloha_Jirik_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    window.showNotification('Úplná záloha vytvořena!');
+    console.log("exportBackup: Úplná záloha vytvořena.");
+};
+
+window.importFromCSV = async function(inputElement) {
+    if (!window.ensureUserLoggedIn()) return;
+    
+    console.log("importFromCSV: Spuštěn import dat z CSV.");
+    const file = inputElement.files[0]; if (!file) { console.warn("importFromCSV: Žádný soubor vybrán."); return; }
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+        console.log("importFromCSV: Soubor CSV načten.");
+        const csv = e.target.result; const lines = csv.split(/\r\n|\n/);
+        if (lines.length <= 1) { window.showNotification('CSV soubor je prázdný nebo neobsahuje data.', 3000); console.warn("importFromCSV: CSV soubor je prázdný."); inputElement.value = ''; return; }
+        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+        const muscleKgOrPercentIdx = headers.indexOf('svalova hmota (kg)') !== -1 ? headers.indexOf('svalova hmota (kg)') : headers.indexOf('svalova hmota (%)');
+        
+        const dateIdx = headers.indexOf('datum'); const weightIdx = headers.indexOf('vaha (kg)');
+        const fatIdx = headers.indexOf('telesny tuk (%)'); const waterIdx = headers.indexOf('voda v tele (%)');
+        const manualBmrIdx = headers.indexOf('manual bmr'); const manualAmrIdx = headers.indexOf('manual amr');
+        const notesIdx = headers.indexOf('poznamky');
+
+        let importedCount = 0; let skippedCount = 0;
+        console.log(`importFromCSV: Zpracovávám ${lines.length - 1} řádků CSV.`);
+        for (let i = 1; i < lines.length; i++) {
+            const data = lines[i].split(',');
+            const date = data[dateIdx] ? data[dateIdx].trim() : null;
+            const weight = data[weightIdx] ? parseFloat(data[weightIdx].trim()) : null;
+            if (!date || !weight || isNaN(weight)) { skippedCount++; console.warn(`importFromCSV: Přeskočen neplatný řádek ${i}: ${lines[i]}`); continue; }
+            
+            let muscleMassKg = null;
+            if (muscleKgOrPercentIdx !== -1 && data[muscleKgOrPercentIdx] && !isNaN(parseFloat(data[muscleKgOrPercentIdx].trim()))) {
+                if (headers[muscleKgOrPercentIdx] === 'svalova hmota (%)') {
+                    const percent = parseFloat(data[muscleKgOrPercentIdx].trim());
+                    muscleMassKg = parseFloat(((percent / 100) * weight).toFixed(2));
+                } else { muscleMassKg = parseFloat(data[muscleKgOrPercentIdx].trim()); }
+            }
+            const newEntry = {
+                date: date, weight: weight, bodyFat: fatIdx !== -1 && data[fatIdx] ? parseFloat(data[fatIdx].trim()) : null,
+                muscleMass: muscleMassKg, bodyWater: waterIdx !== -1 && data[waterIdx] ? parseFloat(data[waterIdx].trim()) : null,
+                manualBMR: manualBmrIdx !== -1 && data[manualBmrIdx] ? parseInt(data[manualBmrIdx].trim()) : null,
+                manualAMR: manualAmrIdx !== -1 && data[manualAmrIdx] ? parseInt(data[manualAmrIdx].trim()) : null,
+                notes: notesIdx !== -1 && data[notesIdx] ? data[notesIdx].trim().replace(/^"|"$/g, '') : ""
+            };
+            const existingIndex = weightLog.findIndex(entry => entry.date === newEntry.date);
+            if (existingIndex !== -1) { weightLog[existingIndex] = newEntry; console.log(`importFromCSV: Aktualizován záznam pro datum ${date}.`); } else { weightLog.push(newEntry); console.log(`importFromCSV: Přidán nový záznam pro datum ${date}.`); }
+            importedCount++;
+        }
+        if (importedCount > 0) {
+            console.log("importFromCSV: Ukládám importovaná data.");
+            await window.saveData();
+            window.updateDisplay();
+            window.showNotification(`Importováno ${importedCount} záznamů. ${skippedCount > 0 ? skippedCount + ' přeskočeno.' : ''}`);
+        } else { window.showNotification('Nebyly nalezeny žádné platné záznamy k importu v CSV.', 3000); }
+        inputElement.value = '';
+        console.log("importFromCSV: Import CSV dokončen.");
+    };
+    reader.readAsText(file);
+};
+
+window.importFromBackup = async function(inputElement) {
+    if (!window.ensureUserLoggedIn()) return;
+    
+    console.log("importFromBackup: Spuštěn import ze zálohy.");
+    const file = inputElement.files[0]; if (!file) { console.warn("importFromBackup: Žádný soubor zálohy vybrán."); return; }
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+        console.log("importFromBackup: Soubor zálohy načten.");
+        try {
+            const backupData = JSON.parse(e.target.result);
+            console.log("importFromBackup: Data zálohy analyzována:", backupData);
+            if (backupData.appName !== "Pokročilý váhový tracker více admirála Jiříka") {
+                console.warn("importFromBackup: Soubor zálohy nepochází z této aplikace. Dotazuji uživatele na pokračování.");
+                if (!confirm("Zdá se, že tento soubor nepochází z této aplikace. Přesto pokračovat?")) {
+                    inputElement.value = ''; console.log("importFromBackup: Import zálohy zrušen uživatelem."); return;
+                }
+            }
+            if (backupData.weightLog) { weightLog = backupData.weightLog; console.log("importFromBackup: weightLog ze zálohy načten."); }
+            if (backupData.settings) { settings = { ...settings, ...backupData.settings }; console.log("importFromBackup: Nastavení ze zálohy načtena."); }
+            if (backupData.goals) { goals = { ...goals, ...backupData.goals }; console.log("importFromBackup: Cíle ze zálohy načteny."); }
+            
+            weightLog.forEach(entry => {
+                if (entry.manualBMR === undefined) entry.manualBMR = null;
+                if (entry.manualAMR === undefined) entry.manualAMR = null;
+                if (entry.muscleMass === undefined) entry.muscleMass = null;
+            });
+            console.log("importFromBackup: Data zálohy připravena, ukládám.");
+            await window.saveData();
+            window.updateForms();
+            window.updateDisplay();
+            window.showNotification('Záloha úspěšně obnovena!');
+            console.log("importFromBackup: Import zálohy dokončen.");
+        } catch (error) {
+            window.showNotification('Chyba při načítání zálohy: ' + error.message, 4000);
+            console.error("importFromBackup: Chyba při zpracování souboru zálohy:", error);
+        }
+        inputElement.value = '';
+    };
+    reader.readAsText(file);
+};
+
+window.clearAllData = async function() {
+    if (!window.ensureUserLoggedIn()) return;
+    
+    console.log("clearAllData: Spuštěn proces mazání všech dat.");
+    if (confirm('⚠️ OPRAVDU chcete smazat VŠECHNA data? Tuto akci nelze vrátit zpět!')) {
+        console.log("clearAllData: Uživatel potvrdil 1. fázi mazání.");
+        if (confirm('⚠️ JSTE SI ABSOLUTNĚ JISTI? Všechna data budou nenávratně ztracena!')) {
+            console.log("clearAllData: Uživatel potvrdil 2. fázi mazání. Mažu data.");
+            localStorage.removeItem('weightLog_JirikTracker_v2_charts_separated_musclePercent');
+            localStorage.removeItem('weightSettings_JirikTracker_v2_charts_separated_musclePercent');
+            localStorage.removeItem('weightGoals_JirikTracker_v2_charts_separated_musclePercent');
+            console.log("clearAllData: Lokální data smazána z LocalStorage.");
+            
+            try {
+                console.log("clearAllData: Pokouším se smazat všechna data z Firebase Firestore.");
+                await window.clearAllFirestoreData();
+                console.log("clearAllData: Všechna data úspěšně smazána z Firebase Firestore.");
+            } catch (error) {
+                console.error("clearAllData: Chyba při mazání všech dat z Firebase Firestore:", error);
+                window.showNotification("Chyba při mazání dat z cloudu! Smažte je prosím ručně v konzoli Firebase.", 8000);
+            }
+
+            weightLog = [];
+            settings = { height: 174, age: null, gender: 'male', activityLevel: 1.55, bmiWarningUpper: 25, bmiDangerUpper: 30, bmiWarningLower: 18.5, reminderEnabled: true, reminderInterval: 7 };
+            goals = { targetWeight: null, targetBMI: null, targetDate: null, weeklyGoal: null };
+            console.log("clearAllData: Globální proměnné resetovány na výchozí hodnoty.");
+            await window.loadData();
+            window.showNotification('Všechna data byla smazána!');
+            console.log("clearAllData: Proces mazání všech dat dokončen.");
+        } else {
+            console.log("clearAllData: Mazání všech dat zrušeno uživatelem (2. fáze).");
+        }
+    } else {
+        console.log("clearAllData: Mazání všech dat zrušeno uživatelem (1. fáze).");
+    }
+};
+
+window.checkReminders = function() {
+    console.log("checkReminders: Kontroluji, zda je třeba zobrazit připomínku.");
+    if (!settings.reminderEnabled) {
+        console.log("checkReminders: Připomínky jsou zakázány.");
+        return;
+    }
+    if (weightLog.length === 0) {
+        console.log("checkReminders: Žádné záznamy váhy, připomínka není nutná.");
+        return;
+    }
+    const lastEntry = [...weightLog].sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+    if (lastEntry) {
+        const daysSinceLastEntry = Math.floor((new Date() - new Date(lastEntry.date)) / (1000 * 60 * 60 * 24));
+        console.log(`checkReminders: Dní od posledního záznamu (${window.formatDateForDisplay(lastEntry.date)}): ${daysSinceLastEntry}. Interval: ${settings.reminderInterval}.`);
+        if (daysSinceLastEntry >= settings.reminderInterval) {
+            window.showNotification(`⏰ Připomínka: Poslední záznam váhy byl před ${daysSinceLastEntry} dny (${window.formatDateForDisplay(lastEntry.date)})!`, 5000);
+            console.log("checkReminders: Zobrazena připomínka.");
+        } else {
+            console.log("checkReminders: Připomínka není nutná, interval ještě nevypršel.");
+        }
+    }
+};
+setInterval(window.checkReminders, 30 * 60 * 1000);
+
+window.toggleFullScreen = function() {
+    console.log("toggleFullScreen: Pokus o přepnutí režimu celé obrazovky.");
+    const elem = document.documentElement;
+    const btn = document.getElementById('fullscreen-btn');
+    if (!document.fullscreenElement) {
+        console.log("toggleFullScreen: Vstupuji do celoobrazovkového režimu.");
+        if (elem.requestFullscreen) elem.requestFullscreen().catch(err => console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`));
+        else if (elem.mozRequestFullScreen) elem.mozRequestFullScreen();
+        else if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
+        else if (elem.msRequestFullscreen) elem.msRequestFullscreen();
+        if(btn) btn.innerHTML = '&#10006;';
+    } else {
+        console.log("toggleFullScreen: Opouštím celoobrazovkový režim.");
+        if (document.exitFullscreen) document.exitFullscreen();
+        else if (document.mozCancelFullScreen) document.mozCancelFullScreen();
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+        else if (document.msExitFullscreen) elem.msExitFullscreen();
+        if(btn) btn.innerHTML = '&#x26F6;';
+    }
+    console.log("toggleFullScreen: Přepnutí režimu celé obrazovky dokončeno.");
+};
+
+window.updateFullscreenButtonIcon = function() {
+    const btn = document.getElementById('fullscreen-btn');
+    if(!btn) return;
+    if (document.fullscreenElement || document.mozFullScreenElement || document.webkitFullscreenElement || document.msFullscreenElement) {
+        btn.innerHTML = '&#10006;';
+    } else {
+        btn.innerHTML = '&#x26F6;';
+    }
+};
+
+window.refreshAllData = async function() {
+    if (!window.ensureUserLoggedIn()) return;
+    
+    console.log("refreshAllData: Spuštěna ruční aktualizace všech údajů (z tlačítka).");
+    if (weightChart) { weightChart.destroy(); console.log("refreshAllData: weightChart zničen."); }
+    if (bmiChart) { bmiChart.destroy(); console.log("refreshAllData: bmiChart zničen."); }
+    if (bodyFatOnlyChart) { bodyFatOnlyChart.destroy(); console.log("refreshAllData: bodyFatOnlyChart zničen."); }
+    if (muscleMassOnlyChart) { muscleMassOnlyChart.destroy(); console.log("refreshAllData: muscleMassOnlyChart zničen."); }
+    if (bodyWaterChart) { bodyWaterChart.destroy(); console.log("refreshAllData: bodyWaterChart zničen."); }
+    if (manualBMRChart) { manualBMRChart.destroy(); console.log("refreshAllData: manualBMRChart zničen."); }
+    if (manualAMRChart) { manualAMRChart.destroy(); console.log("refreshAllData: manualAMRChart zničen."); }
+
+    await window.loadData();
+    window.updateForms();
+    window.initializeCharts();
+    window.updateDisplay();
+    window.checkReminders();
+    window.showNotification('Všechny údaje byly úspěšně aktualizovány (včetně cloudu)!', 3000);
+    console.log("refreshAllData: Ruční aktualizace dokončena.");
+};
+
+// ✅ OPRAVENÁ HLAVNÍ INICIALIZACE - bez automatického loadData
+document.addEventListener('DOMContentLoaded', async function() {
+    console.log("🚀 DOMContentLoaded: DOM plně načten. Spouštím inicializaci aplikace.");
+    
+    // Inicializace Firebase
+    if (window.initializeFirebaseApp()) {
+        console.log("✅ DOMContentLoaded: Firebase inicializace dokončena.");
+    } else {
+        console.error("❌ DOMContentLoaded: Firebase inicializace selhala.");
+        window.showNotification("Kritická chyba: Nelze se připojit k databázi!", 8000);
+    }
+    
+    // ⚠️ DŮLEŽITÉ: NEVOLÁM loadData() zde!
+    // Data se načítají až po přihlášení v auth.js
+    
+    console.log("📊 DOMContentLoaded: Inicializuji grafy a UI.");
+    window.initializeCharts();
+    window.setTodayDate();
+
+    // Přidání fullscreen tlačítka
+    const fullscreenButton = document.createElement('button');
+    fullscreenButton.className = 'fullscreen';
+    fullscreenButton.id = 'fullscreen-btn';
+    fullscreenButton.innerHTML = '&#x26F6;';
+    fullscreenButton.title = 'Přepnout na celou obrazovku';
+    fullscreenButton.addEventListener('click', window.toggleFullScreen);
+    document.body.appendChild(fullscreenButton);
+    
+    ['fullscreenchange', 'mozfullscreenchange', 'webkitfullscreenchange', 'msfullscreenchange'].forEach(event => {
+        document.addEventListener(event, window.updateFullscreenButtonIcon);
+    });
+    
+    console.log("🎉 DOMContentLoaded: Inicializace UI dokončena. Čekám na přihlášení uživatele.");
+});
