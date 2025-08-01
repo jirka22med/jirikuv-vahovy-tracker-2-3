@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <title>Pokročilý váhový tracker více admirála Jiříka</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/8.6.8/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.6.8/firebase-auth.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.6.8/firebase-firestore.js"></script>
+
+<!-- Tvoje funkce (inicializace musí být zde) -->
+<script src="firebaseFunctions.js"></script>
+
+<!-- POSLEDNÍ – funkce co používají Firebase -->
+<script src="auth.js"></script>
+ <script src="jirkuv-hlidac.js"></script> 
+<script src="script.js"></script>
+<!-- Manifest (PWA) -->
+<link rel="manifest" href="manifest.json">
+</head>
+<body>
+ <div class="container">
+    <h1>🖖 Pokročilý váhový tracker více admirála Jiříka</h1>
+    
+    <div class="notification" id="notification"></div>
+    <div class="alert" id="bmiAlert"></div>
+    
+    <div class="tabs">
+      <div class="tab active" onclick="showTab('dashboard')">Dashboard</div>
+      <div class="tab" onclick="showTab('add-entry')">Nový záznam</div>
+      <div class="tab" onclick="showTab('goals')">Cíle</div>
+      <div class="tab" onclick="showTab('settings')">Nastavení</div>
+      <div class="tab" onclick="showTab('export')">Export/Import</div>
+      <button id="jirik-manual-opener-btn" >🧾</button>
+    </div>
+<!-- Login sekce -->
+<div id="login-section">
+  <h2>Přihlášení</h2>
+  <input type="email" id="email" placeholder="Email">
+  <input type="password" id="password" placeholder="Heslo">
+  <button id="login-button">Přihlásit</button>
+   <button id="google-login-button">Přihlásit přes Google</button>
+</div>
+
+<!-- Warpový dashboard pro přihlášené -->
+<div id="dashboard-section" style="display: none;">
+  <h2>Vítej, <span id="user-name">veliteli</span>!</h2>
+  <button id="logout-button">Odhlásit</button>
+</div>
+
+  <!-- Sem dáme tvůj obsah pro uživatele -->
+  <div id="warp-data-container">
+    <!-- váhové záznamy, grafy, atd. -->
+  </div>
+</div>
+
+
+    <div id="dashboard" class="tab-content active">
+      <div class="stats">
+        <div class="stat-item">
+          <div class="stat-value" id="currentWeight">-</div>
+          <div class="stat-label">Aktuální váha (kg)</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="currentBMI">-</div>
+          <div class="stat-label">Aktuální BMI</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="weightChange">-</div>
+          <div class="stat-label">Změna váhy (kg)</div>
+        </div>
+         <div class="stat-item">
+          <div class="stat-value" id="currentBodyWater">-</div>
+          <div class="stat-label">Voda v těle (%)</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="lastManualBMR">-</div>
+          <div class="stat-label">Posl. zadaný BMR</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="lastManualAMR">-</div>
+          <div class="stat-label">Posl. zadaný AMR</div>
+        </div>
+         <div class="stat-item">
+          <div class="stat-value" id="theoreticalBMR">-</div>
+          <div class="stat-label">Teoretický BMR</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="theoreticalAMR">-</div>
+          <div class="stat-label">Teoretický AMR</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="goalProgress">-</div>
+          <div class="stat-label">Pokrok k cíli (%)</div>
+        </div>
+      </div>
+
+      <div id="goalProgressBarCard" class="card" style="display:none; margin-bottom: 20px;">
+        <h3>Pokrok k cíli</h3>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <div id="goalStatus" style="text-align: center; margin-top: 10px; color: #00d9ff;"></div>
+        <div id="goalEstimate" class="stat-subtext" style="text-align: center; margin-top: 5px; color: #ccc;">Odhad: ...</div>
+        <div id="latestEntryDate" style="text-align: center; margin-top: 5px; font-size: 0.9em; color: #aaa;"></div>
+      </div>
+
+      <div class="charts-container">
+        <div class="chart-card">
+          <h3>Vývoj váhy</h3>
+          <canvas id="weightChart"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Vývoj BMI</h3>
+          <canvas id="bmiChart"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Vývoj tělesného tuku (%)</h3>
+          <canvas id="bodyFatOnlyChart"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Vývoj svalové hmoty (%)</h3> <canvas id="muscleMassOnlyChart"></canvas>
+        </div>
+         <div class="chart-card">
+          <h3>Vývoj vody v těle</h3>
+          <canvas id="bodyWaterChart"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Vývoj zadaného BMR (kcal)</h3>
+          <canvas id="manualBMRChart"></canvas>
+        </div>
+        <div class="chart-card">
+          <h3>Vývoj zadaného AMR (kcal)</h3>
+          <canvas id="manualAMRChart"></canvas>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Datum</th>
+            <th>Váha</th>
+            <th>Rozdíl</th>
+            <th>BMI</th>
+            <th>Klasif.</th>
+            <th>Tuk%</th>
+            <th>Svaly (%)</th> <th>Voda%</th>
+            <th>Zad. BMR</th>
+            <th>Zad. AMR</th>
+            <th>Pozn.</th>
+            <th>Akce</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+
+    <div id="add-entry" class="tab-content">
+      <div class="card">
+        <h3>Přidat nový záznam</h3>
+        <form id="entryForm">
+          <div class="form-group">
+            <label for="entryDate">Datum:</label>
+            <input type="date" id="entryDate" required>
+          </div>
+          <div class="form-group">
+            <label for="entryWeight">Váha (kg):</label>
+            <input type="number" id="entryWeight" step="0.1" required>
+          </div>
+          <div class="form-group">
+            <label for="entryBodyFat">Tělesný tuk (%):</label>
+            <input type="number" id="entryBodyFat" step="0.1" min="0" max="100">
+          </div>
+          <div class="form-group">
+            <label for="entryMuscleMass">Svalová hmota (kg):</label>
+            <input type="number" id="entryMuscleMass" step="0.1" min="0">
+          </div>
+          <div class="form-group">
+            <label for="entryBodyWater">Voda v těle (%):</label>
+            <input type="number" id="entryBodyWater" step="0.1" min="0" max="100">
+          </div>
+          <div class="form-group">
+            <label for="entryManualBMR">Ručně zadané BMR (kcal):</label>
+            <input type="number" id="entryManualBMR" step="1" min="0">
+          </div>
+          <div class="form-group">
+            <label for="entryManualAMR">Ručně zadané AMR (kcal):</label>
+            <input type="number" id="entryManualAMR" step="1" min="0">
+          </div>
+          <div class="form-group">
+            <label for="entryNotes">Poznámky:</label>
+            <textarea id="entryNotes" rows="3"></textarea>
+          </div>
+          <button type="submit">Přidat záznam</button>
+        </form>
+      </div>
+    </div>
+
+    <div id="goals" class="tab-content">
+      <div class="card">
+        <h3>Nastavení cílů</h3>
+        <form id="goalsForm">
+          <div class="form-group">
+            <label for="targetWeight">Cílová váha (kg):</label>
+            <input type="number" id="targetWeight" step="0.1">
+          </div>
+          <div class="form-group">
+            <label for="targetBMI">Cílové BMI:</label>
+            <input type="number" id="targetBMI" step="0.1">
+          </div>
+          <div class="form-group">
+            <label for="targetDate">Termín splnění cíle:</label>
+            <input type="date" id="targetDate">
+          </div>
+          <div class="form-group">
+            <label for="weeklyGoal">Týdenní změna váhy (kg) (např. -0.5 pro hubnutí):</label>
+            <input type="number" id="weeklyGoal" step="0.1">
+          </div>
+          <button type="submit">Uložit cíle</button>
+        </form>
+        
+        <div id="recommendations" class="card" style="margin-top: 20px; background: #2a3441;">
+          <h3>Doporučení</h3>
+          <div id="recommendationText"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="settings" class="tab-content">
+      <div class="dashboard">
+        <div class="card">
+          <h3>Osobní údaje (pro teoretické výpočty)</h3>
+          <form id="settingsForm">
+            <div class="form-group">
+              <label for="height">Výška (cm):</label>
+              <input type="number" id="height" min="100" max="250" value="174">
+            </div>
+            <div class="form-group">
+              <label for="age">Věk:</label>
+              <input type="number" id="age" min="1" max="120">
+            </div>
+            <div class="form-group">
+              <label for="gender">Pohlaví:</label>
+              <select id="gender">
+                <option value="male">Muž</option>
+                <option value="female">Žena</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="activityLevel">Úroveň fyzické aktivity:</label>
+              <select id="activityLevel">
+                <option value="1.2">Sedavé (málo nebo žádné cvičení)</option>
+                <option value="1.375">Lehce aktivní (cvičení 1-3 dny/týden)</option>
+                <option value="1.55">Mírně aktivní (cvičení 3-5 dní/týden)</option>
+                <option value="1.725">Velmi aktivní (cvičení 6-7 dní/týden)</option>
+                <option value="1.9">Extrémně aktivní (velmi těžké cvičení, fyzická práce)</option>
+              </select>
+            </div>
+            <button type="submit">Uložit nastavení</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h3>BMI hranice</h3>
+          <form id="bmiAlertsForm">
+            <div class="form-group">
+              <label for="bmiWarningUpper">Horní hranice BMI (varování):</label>
+              <input type="number" id="bmiWarningUpper" step="0.1" value="25">
+            </div>
+            <div class="form-group">
+              <label for="bmiDangerUpper">Horní hranice BMI (nebezpečí):</label>
+              <input type="number" id="bmiDangerUpper" step="0.1" value="30">
+            </div>
+            <div class="form-group">
+              <label for="bmiWarningLower">Dolní hranice BMI (varování):</label>
+              <input type="number" id="bmiWarningLower" step="0.1" value="18.5">
+            </div>
+            <button type="submit">Uložit hranice</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h3>Připomínky</h3>
+          <form id="remindersForm">
+            <div class="form-group">
+              <label for="reminderEnabled">Povolit připomínky:</label>
+              <input type="checkbox" id="reminderEnabled" style="width: auto;">
+            </div>
+            <div class="form-group">
+              <label for="reminderInterval">Interval připomínek (dny):</label>
+              <input type="number" id="reminderInterval" min="1" max="30" value="7">
+            </div>
+            <button type="submit">Uložit připomínky</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div id="export" class="tab-content">
+      <div class="dashboard">
+        <div class="card">
+          <h3>Export dat</h3>
+          <button onclick="exportToCSV()">📊 Export do CSV</button>
+          <button onclick="exportToPDF()">📄 Export do PDF</button>
+          <button onclick="exportChartsAsPDF()">📈 Export grafů do PDF</button>
+          <button onclick="exportBackup()">💾 Úplná záloha</button>
+        </div>
+
+        <div class="card">
+          <h3>Import dat</h3>
+          <div class="form-group">
+            <label for="csvImport">Import CSV:</label>
+            <input type="file" id="csvImport" accept=".csv" onchange="importFromCSV(this)">
+          </div>
+          <div class="form-group">
+            <label for="backupImport">Obnovit ze zálohy:</label>
+            <input type="file" id="backupImport" accept=".json" onchange="importFromBackup(this)">
+          </div>
+          <button class="danger" onclick="clearAllData()">🗑️ Vymazat všechna data</button>
+        </div>
+      </div>
+    </div>
+  
+    
+    </body>
+</html>
