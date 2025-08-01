@@ -70,57 +70,18 @@ function clearUserDataFromUI() {
     if (typeof clearGoalsFromUI === 'function') {
       clearGoalsFromUI();
     }
+
+    // Vymaž formuláře
+    const forms = document.querySelectorAll('form');
+    forms.forEach(form => {
+      if (form.reset && typeof form.reset === 'function') {
+        form.reset();
+      }
+    });
     
     console.log("🧹 UI vyčištěno po odhlášení");
   } catch (error) {
     console.error("❌ Chyba při čištění UI:", error);
-  }
-}
-
-// ✅ OPRAVENÁ FUNKCE: Načte všechna data po přihlášení
-async function loadAllUserData(user) {
-  try {
-    console.log(`📦 Začínám načítat data pro uživatele: ${user.email} (UID: ${user.uid})`);
-    
-    // DŮLEŽITÉ: Ujisti se, že Firestore je inicializovaný
-    if (!window.db) {
-      console.log("⏳ Čekám na inicializaci Firestore...");
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-    
-    // Načti všechna data paralelně
-    const [weightData, settings, goals] = await Promise.all([
-      loadWeightLogFromFirestore(),
-      loadSettingsFromFirestore(),
-      loadGoalsFromFirestore()
-    ]);
-    
-    console.log(`✅ Váhová data načtena pro ${user.email}:`, weightData?.length || 0, "záznamů");
-    console.log(`⚙️ Nastavení načtena pro ${user.email}:`, settings);
-    console.log(`🎯 Cíle načteny pro ${user.email}:`, goals);
-    
-    // Zavolej funkci pro zobrazení dat (pokud existuje)
-    if (typeof loadData === 'function') {
-      await loadData();
-    }
-    
-    // Nebo zavolej jednotlivé funkce pro aktualizaci UI
-    if (typeof updateWeightChart === 'function') {
-      updateWeightChart(weightData);
-    }
-    
-    if (typeof applySettings === 'function') {
-      applySettings(settings);
-    }
-    
-    if (typeof updateGoalsDisplay === 'function') {
-      updateGoalsDisplay(goals);
-    }
-    
-    console.log(`🎉 Všechna data načtena a UI aktualizováno pro ${user.email}!`);
-    
-  } catch (error) {
-    console.error(`❌ Chyba při načítání dat pro uživatele ${user?.email}:`, error);
   }
 }
 
@@ -149,24 +110,37 @@ firebase.auth().onAuthStateChanged(async (user) => {
       userEmail.textContent = user.email;
     }
 
-    // ✅ OPRAVA: Počkej na úplnou inicializaci Firebase a pak načti data
-    // Používáme waitForAuth() z firebaseFunctions.js
-    if (typeof waitForAuth === 'function') {
-      try {
+    // ✅ ZJEDNODUŠENÉ ŘEŠENÍ: Použij pouze loadData() funkci
+    try {
+      // Počkej na Firebase inicializaci
+      if (typeof waitForAuth === 'function') {
         await waitForAuth();
-        console.log("🔄 Firebase plně inicializován, načítám data...");
-        await loadAllUserData(user);
-      } catch (error) {
-        console.error("❌ Chyba při čekání na Firebase:", error);
-        // Záložní řešení s delším timeoutem
-        setTimeout(async () => {
-          await loadAllUserData(user);
-        }, 2000);
+        console.log("🔄 Firebase plně inicializován");
+      } else {
+        // Záložní čekání 1 sekunda
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
-    } else {
-      // Záložní řešení s delším timeoutem
+
+      // Zavolej loadData() - ta už má veškerou logiku pro načítání a zobrazení
+      if (typeof loadData === 'function') {
+        console.log("📦 Volám loadData() pro načtení a zobrazení dat...");
+        await loadData(true); // forceReload = true pro jistotu
+        console.log("🎉 Data načtena a zobrazena!");
+      } else {
+        console.error("❌ Funkce loadData() není definována!");
+      }
+
+    } catch (error) {
+      console.error("❌ Chyba při načítání dat po přihlášení:", error);
+      // Zkus to znovu po 2 sekundách
       setTimeout(async () => {
-        await loadAllUserData(user);
+        try {
+          if (typeof loadData === 'function') {
+            await loadData(true);
+          }
+        } catch (retryError) {
+          console.error("❌ Druhý pokus o načtení dat také selhal:", retryError);
+        }
       }, 2000);
     }
 
@@ -217,7 +191,9 @@ document.addEventListener("DOMContentLoaded", () => {
 window.refreshUserData = async function() {
   const user = firebase.auth().currentUser;
   if (user) {
-    await loadAllUserData(user);
+    if (typeof loadData === 'function') {
+      await loadData(true); // forceReload = true
+    }
   } else {
     console.warn("⚠️ Nelze načíst data - uživatel není přihlášen");
   }
